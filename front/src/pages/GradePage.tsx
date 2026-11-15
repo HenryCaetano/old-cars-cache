@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError, listarCarros } from "../api";
-import type { Carro, Pagina } from "../types";
+import { ApiError, buscarCarros, listarCarros, ordenarCarros } from "../api";
+import type { Carro, Ordem, Pagina } from "../types";
 import { CarPhoto } from "../components/CarPhoto";
 import { Roundel } from "../components/Roundel";
 import { Pagination } from "../components/Pagination";
@@ -10,47 +10,6 @@ import { EmptyState } from "../components/EmptyState";
 import { IconeBusca, IconeFechar, IconeMais, IconeSeta, IconeSetaBaixo } from "../components/Icones";
 import { formatarId, numero } from "../formato";
 import { useTitulo } from "../useTitulo";
-
-type Ordem = "entrada-asc" | "entrada-desc" | "ano-desc" | "ano-asc" | "potencia-desc" | "marca-asc";
-
-const SEM_ACENTO = (texto: string) =>
-  texto
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase();
-
-function combina(carro: Carro, termo: string): boolean {
-  if (!termo) return true;
-  const alvo = SEM_ACENTO(termo);
-  return [
-    carro.marca,
-    carro.modelo,
-    carro.paisOrigem,
-    carro.motor,
-    carro.cor,
-    carro.curador,
-    String(carro.anoFabricacao),
-    `nº ${formatarId(carro.id)}`,
-  ].some((campo) => SEM_ACENTO(campo).includes(alvo));
-}
-
-function ordenar(carros: Carro[], ordem: Ordem): Carro[] {
-  const copia = [...carros];
-  switch (ordem) {
-    case "entrada-desc":
-      return copia.sort((a, b) => b.id - a.id);
-    case "ano-desc":
-      return copia.sort((a, b) => b.anoFabricacao - a.anoFabricacao || a.id - b.id);
-    case "ano-asc":
-      return copia.sort((a, b) => a.anoFabricacao - b.anoFabricacao || a.id - b.id);
-    case "potencia-desc":
-      return copia.sort((a, b) => b.potenciaCv - a.potenciaCv || a.id - b.id);
-    case "marca-asc":
-      return copia.sort((a, b) => a.marca.localeCompare(b.marca, "pt-BR") || a.modelo.localeCompare(b.modelo, "pt-BR"));
-    default:
-      return copia.sort((a, b) => a.id - b.id);
-  }
-}
 
 function LinhaTabela({ carro }: { carro: Carro }) {
   const navigate = useNavigate();
@@ -126,27 +85,43 @@ export function GradePage() {
   const [ordem, setOrdem] = useState<Ordem>("entrada-asc");
   const [tentativa, setTentativa] = useState(0);
   const [pularPagina, setPularPagina] = useState(0);
+  const termoBusca = busca.trim();
 
   useEffect(() => {
     let ativo = true;
+    const espera = termoBusca ? 250 : 0;
     setEstado((atual) => ({ ...atual, carregando: true, erro: null }));
-    listarCarros(pagina)
-      .then((dados) => {
-        if (ativo) setEstado({ carregando: false, dados, erro: null });
-      })
-      .catch((erro: unknown) => {
-        if (ativo) {
-          setEstado({
-            carregando: false,
-            dados: null,
-            erro: erro instanceof ApiError ? erro : new ApiError(0, "Falha", "Não foi possível carregar a grade."),
-          });
-        }
-      });
+
+    const temporizador = window.setTimeout(() => {
+      const requisicao =
+        ordem !== "entrada-asc"
+          ? ordenarCarros(termoBusca, ordem, pagina)
+          : termoBusca
+            ? buscarCarros(termoBusca, pagina)
+            : listarCarros(pagina);
+      requisicao
+        .then((dados) => {
+          if (ativo) setEstado({ carregando: false, dados, erro: null });
+        })
+        .catch((erro: unknown) => {
+          if (ativo) {
+            setEstado({
+              carregando: false,
+              dados: null,
+              erro:
+                erro instanceof ApiError
+                  ? erro
+                  : new ApiError(0, "Falha", "Não foi possível carregar a grade."),
+            });
+          }
+        });
+    }, espera);
+
     return () => {
       ativo = false;
+      window.clearTimeout(temporizador);
     };
-  }, [pagina, tentativa]);
+  }, [pagina, termoBusca, ordem, tentativa]);
 
   useEffect(() => {
     const dados = estado.dados;
@@ -157,12 +132,26 @@ export function GradePage() {
     }
   }, [estado.dados, pagina, parametros, definirParametros]);
 
-  const visiveis = useMemo(() => {
-    const lista = estado.dados?.conteudo ?? [];
-    return ordenar(lista.filter((carro) => combina(carro, busca.trim())), ordem);
-  }, [estado.dados, busca, ordem]);
+  const visiveis = estado.dados?.conteudo ?? [];
+  const filtroAtivo = termoBusca.length > 0;
 
-  const filtroAtivo = busca.trim().length > 0;
+  function alterarBusca(valor: string) {
+    setBusca(valor);
+    if (pagina !== 0) {
+      const proximos = new URLSearchParams(parametros);
+      proximos.delete("pagina");
+      definirParametros(proximos, { replace: true });
+    }
+  }
+
+  function alterarOrdem(valor: Ordem) {
+    setOrdem(valor);
+    if (pagina !== 0) {
+      const proximos = new URLSearchParams(parametros);
+      proximos.delete("pagina");
+      definirParametros(proximos, { replace: true });
+    }
+  }
 
   function irParaPagina(destino: number) {
     const proximos = new URLSearchParams(parametros);
@@ -170,18 +159,24 @@ export function GradePage() {
     else proximos.set("pagina", String(destino));
     definirParametros(proximos);
     window.scrollTo({ top: 0, behavior: "auto" });
-    setBusca("");
   }
 
   function pularParaPagina() {
     const paginaDestino = Math.max(0, Math.min(pularPagina - 1, totalPaginas - 1));
-    irParaPagina(paginaDestino + 1);
+    irParaPagina(paginaDestino);
     setPularPagina(0);
   }
 
   const dados = estado.dados;
   const totalPaginas = dados?.totalPaginas ?? 0;
   const paginaAtual = dados?.pagina ?? pagina;
+  const rotuloTotal = filtroAtivo
+    ? (dados?.totalElementos ?? 0) === 1
+      ? "resultado"
+      : "resultados"
+    : (dados?.totalElementos ?? 0) === 1
+      ? "exemplar"
+      : "exemplares";
 
   return (
     <div className="pagina pagina--grade">
@@ -191,8 +186,10 @@ export function GradePage() {
           <p className="grade-cabecalho__resumo">
             {dados ? (
               <>
-                <strong>{numero(dados.totalElementos)} exemplares</strong> · página {paginaAtual + 1} de{" "}
-                {totalPaginas} · 10 por página
+                <strong>
+                  {numero(dados.totalElementos)} {rotuloTotal}
+                </strong>{" "}
+                · página {paginaAtual + 1} de {totalPaginas} · 10 por página
               </>
             ) : (
               "Carregando a coleção…"
@@ -201,26 +198,32 @@ export function GradePage() {
           </div>
         <p className="grade-cabecalho__endpoint">
           <span>fonte</span>
-          <code>GET /carros?pagina={pagina}</code>
+          <code>
+            {ordem !== "entrada-asc"
+              ? `GET /carros/ordenados?ordem=${ordem}&pagina=${pagina}`
+              : filtroAtivo
+                ? `GET /carros/busca?pagina=${pagina}`
+                : `GET /carros?pagina=${pagina}`}
+          </code>
         </p>
       </header>
 
       <div className="filtros" role="search">
         <label className="campo-busca">
-          <span className="sr-only">Filtrar os exemplares desta página</span>
+          <span className="sr-only">Filtrar os exemplares de todas as páginas</span>
           <IconeBusca size={16} className="campo-busca__icone" />
           <input
             type="search"
             value={busca}
-            onChange={(evento) => setBusca(evento.target.value)}
-            placeholder="Filtrar nesta página: marca, modelo, país…"
+            onChange={(evento) => alterarBusca(evento.target.value)}
+            placeholder="Filtrar por: marca, modelo, país…"
             autoComplete="off"
           />
           {busca && (
             <button
               type="button"
               className="campo-busca__limpar"
-              onClick={() => setBusca("")}
+              onClick={() => alterarBusca("")}
               aria-label="Limpar filtro"
             >
               <IconeFechar size={13} />
@@ -231,7 +234,7 @@ export function GradePage() {
         <label className="campo-ordem">
           <span className="campo-ordem__rotulo">Ordenar</span>
           <span className="campo-ordem__select">
-            <select value={ordem} onChange={(evento) => setOrdem(evento.target.value as Ordem)}>
+            <select value={ordem} onChange={(evento) => alterarOrdem(evento.target.value as Ordem)}>
               <option value="entrada-asc">Entrada ↑</option>
               <option value="entrada-desc">Entrada ↓</option>
               <option value="ano-desc">Ano ↓</option>
@@ -244,7 +247,7 @@ export function GradePage() {
         </label>
 
         <span className="filtros__contagem" aria-live="polite">
-          {filtroAtivo ? `${visiveis.length} de ${dados?.conteudo.length ?? 0} nesta página` : ""}
+          {filtroAtivo ? `${numero(dados?.totalElementos ?? 0)} no acervo` : ""}
         </span>
 
         <Link to="/carros/novo" className="botao botao--primario filtros__novo">
@@ -278,7 +281,7 @@ export function GradePage() {
           titulo={filtroAtivo ? "Nenhum exemplar bate com o filtro" : "Esta página está vazia"}
           acao={
             filtroAtivo ? (
-              <button type="button" className="botao botao--linha" onClick={() => setBusca("")}>
+              <button type="button" className="botao botao--linha" onClick={() => alterarBusca("")}>
                 Limpar filtro
               </button>
             ) : (
@@ -295,8 +298,8 @@ export function GradePage() {
         >
           {filtroAtivo ? (
             <p>
-              O filtro busca apenas nos 10 exemplares da página {paginaAtual + 1}. Tente outro termo ou
-              troque de página.
+              O filtro percorre todas as páginas do acervo. Tente outro termo ou limpe o filtro para ver
+              a coleção completa.
             </p>
           ) : (
             <p>Todos os exemplares desta página foram excluídos. A coleção continua nas outras páginas.</p>

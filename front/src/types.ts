@@ -20,6 +20,14 @@ export interface Pagina {
   totalPaginas: number;
 }
 
+export type Ordem =
+  | "entrada-asc"
+  | "entrada-desc"
+  | "ano-desc"
+  | "ano-asc"
+  | "potencia-desc"
+  | "marca-asc";
+
 export interface Estatisticas {
   tamanhoAtual: number;
   limite: number;

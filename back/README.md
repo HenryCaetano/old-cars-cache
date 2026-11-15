@@ -226,6 +226,8 @@ java -jar target/carros-classicos-0.0.1-SNAPSHOT.jar \
 | Método | Rota | Comportamento |
 |---|---|---|
 | `GET` | `/carros?pagina=0` | Lista paginada, sempre 10 itens por página. |
+| `GET` | `/carros/busca?termo=lamborghini&pagina=0` | Filtra todo o acervo (não apenas a página atual) e devolve o resultado paginado de 10 em 10. Ignora acentos e maiúsculas/minúsculas. |
+| `GET` | `/carros/ordenados?ordem=ano-desc&pagina=0&termo=` | Ordena todo o acervo antes de paginar. Aceita `entrada-asc`, `entrada-desc`, `ano-asc`, `ano-desc`, `potencia-desc` e `marca-asc`, com filtro opcional por `termo`. |
 | `GET` | `/carros/{id}` | Busca no cache; em MISS/TTL expirado consulta a fonte (lenta) e armazena. Devolve `X-Cache: HIT` ou `X-Cache: MISS`. |
 | `POST` | `/carros` | Cadastra um carro. Retorna `201` e `Location`. |
 | `PUT` | `/carros/{id}` | Atualiza o carro e invalida a entrada do cache. |
@@ -235,7 +237,7 @@ java -jar target/carros-classicos-0.0.1-SNAPSHOT.jar \
 
 ### 6.1 Swagger / OpenAPI
 
-Todos os sete endpoints estão documentados no Swagger UI, com:
+Todos os endpoints estão documentados no Swagger UI, com:
 
 - resumo, descrição e tags `Carros` e `Cache`;
 - schemas de requisição e resposta (`CarroRequest`, `CarroResponse`, `PaginaResponse`, `ErroResponse` e `EstatisticasResponse`);

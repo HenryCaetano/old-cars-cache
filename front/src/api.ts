@@ -1,4 +1,4 @@
-import type { Carro, CarroRequest, Estatisticas, Pagina, ResultadoLeitura } from "./types";
+import type { Carro, CarroRequest, Estatisticas, Ordem, Pagina, ResultadoLeitura } from "./types";
 import type { ErroApi } from "./types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "/api";
@@ -59,15 +59,30 @@ export function listarCarros(pagina: number): Promise<Pagina> {
   return requisitar<Pagina>(`/carros?pagina=${pagina}`);
 }
 
-export async function lerCarro(id: number | string): Promise<ResultadoLeitura> {
+export function buscarCarros(termo: string, pagina: number): Promise<Pagina> {
+  return requisitar<Pagina>(`/carros/busca?termo=${encodeURIComponent(termo)}&pagina=${pagina}`);
+}
+
+export function ordenarCarros(termo: string, ordem: Ordem, pagina: number): Promise<Pagina> {
+  const parametros = new URLSearchParams({ ordem, pagina: String(pagina) });
+  if (termo) parametros.set("termo", termo);
+  return requisitar<Pagina>(`/carros/ordenados?${parametros.toString()}`);
+}
+
+export async function lerCarro(
+  id: number | string,
+  opcoes?: { signal?: AbortSignal },
+): Promise<ResultadoLeitura> {
   const inicio = performance.now();
   let resposta: Response;
   try {
     resposta = await fetch(`${BASE}/carros/${id}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
+      signal: opcoes?.signal,
     });
-  } catch {
+  } catch (erro) {
+    if (erro instanceof DOMException && erro.name === "AbortError") throw erro;
     throw new ApiError(0, "API indisponível", INSTRUCAO_API);
   }
 

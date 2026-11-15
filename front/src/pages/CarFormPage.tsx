@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, atualizarCarro, criarCarro, lerCarro } from "../api";
 import type { CarroRequest } from "../types";
@@ -121,14 +121,11 @@ export function CarFormPage() {
   const [erroCarga, setErroCarga] = useState<ApiError | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [tentativa, setTentativa] = useState(0);
-  const chaveCarregada = useRef<string | null>(null);
 
   useTitulo(editando ? `Editar entrada ${formatarId(id ?? "")}` : "Nova entrada");
 
   useEffect(() => {
     if (!editando || !id) return;
-    if (chaveCarregada.current === id) return;
-    chaveCarregada.current = id;
 
     const controller = new AbortController();
     let mounted = true;
@@ -248,7 +245,6 @@ export function CarFormPage() {
           mensagem={erroCarga.message}
           detalhe={erroCarga.titulo}
           aoTentar={() => {
-            chaveCarregada.current = null;
             setTentativa((valor) => valor + 1);
           }}
         />
